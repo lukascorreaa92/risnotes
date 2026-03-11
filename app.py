@@ -5,11 +5,66 @@ import shutil
 import unicodedata
 from io import BytesIO
 from openpyxl.styles import Alignment
+from supabase import create_client
+from dotenv import load_dotenv
 
-ARQUIVO_EXCEL = "historico_implantacoes.xlsx"
-ARQUIVO_BACKUP = "historico_implantacoes_backup.xlsx"
+load_dotenv()
+
 
 st.set_page_config(page_title="RisNotes - Implantação", layout="wide")
+
+# ==================================================
+# SUPABASE
+# ==================================================
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# ==================================================
+# AUTENTICAÇÃO
+# ==================================================
+
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+def tela_login():
+
+    st.title("🔐 Login RisNotes")
+
+    email = st.text_input("E-mail")
+    senha = st.text_input("Senha", type="password")
+
+    if st.button("Entrar"):
+
+        try:
+            resposta = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": senha
+            })
+
+            st.session_state.user = resposta.user
+            st.rerun()
+
+        except Exception as e:
+            st.error("E-mail ou senha inválidos")
+
+if st.session_state.user is None:
+    tela_login()
+    st.stop()
+
+usuario_email = st.session_state.user.email
+usuario_nome = usuario_email.split("@")[0]
+
+PASTA_DADOS = "dados"
+
+if not os.path.exists(PASTA_DADOS):
+    os.makedirs(PASTA_DADOS)
+
+ARQUIVO_EXCEL = f"{PASTA_DADOS}/historico_{usuario_nome}.xlsx"
+ARQUIVO_BACKUP = f"{PASTA_DADOS}/historico_{usuario_nome}_backup.xlsx"
 
 # ==================================================
 # LISTAS GLOBAIS
@@ -191,8 +246,8 @@ with st.sidebar:
 
                 st.session_state["amb_net"] = registro.get("Ambiente_netReport") == "OK"
                 st.session_state["homolog"] = registro.get("Homologacao_Agendada") == "OK"
-                st.session_state["rel_val"] = registro["Relatorios_Validacao"] == "OK"
-                st.session_state["prec"] = registro["Precificacao"] == "OK"
+                st.session_state["rel_val"] = registro.get("Relatorios_Validacao") == "OK"
+                st.session_state["prec"] = registro.get("Precificacao") == "OK"
 
         else:
             st.warning("Cliente novo.")
@@ -207,6 +262,12 @@ with st.sidebar:
     url_deip = st.text_input("URL DEIP")
     url_infra = st.text_input("URL Infra")
     data_visita = st.date_input("Data Acompanhamento")
+
+    st.write("")  # pequeno espaçamento
+
+    if st.button("🚪 Logout", use_container_width=False):
+        st.session_state.user = None
+        st.rerun()
 
 st.title("📋 RisNotes - Implantação RIS")
 
@@ -424,8 +485,7 @@ if os.path.exists(ARQUIVO_EXCEL):
             id_del = st.number_input(
                 "ID da linha:",
                 min_value=0,
-                max_value=len(df_view) - 1,
-                step=1
+                max_value=max(0, len(df_view) - 1)
             )
             if st.button("Confirmar Exclusão Definitiva"):
                 excluir_registro_df(id_del)
